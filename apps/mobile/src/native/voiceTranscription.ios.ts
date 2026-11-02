@@ -12,8 +12,9 @@ import {
 import { resolveVoiceInputLanguage } from "../lib/voiceInputLanguage";
 import { deviceLanguages } from "./deviceLanguages";
 
-function getDeviceLocale(): string {
+function getLocale(language: string | null | undefined): string {
   return resolveVoiceInputLanguage(
+    language,
     deviceLanguages(),
     Intl.DateTimeFormat().resolvedOptions().locale,
   );
@@ -39,8 +40,9 @@ function getNativeErrorCode(error: unknown): string | undefined {
   return typeof error.code === "string" ? error.code : undefined;
 }
 
-export function getLocalVoiceTranscriber(): VoiceTranscriber | null {
-  const locale = getDeviceLocale();
+/** `language` is a BCP 47 tag; null or undefined follows the device's language list. */
+export function getLocalVoiceTranscriber(language?: string | null): VoiceTranscriber | null {
+  const locale = getLocale(language);
   if (!AppleTranscription.isAvailable(locale)) return null;
   return { prepare: (options) => prepareVoiceTranscription(locale, options) };
 }
@@ -69,7 +71,7 @@ async function prepareVoiceTranscription(
     if (getNativeErrorCode(error) === "AppleTranscriptionUnsupportedLocale") {
       throw new VoiceTranscriptionError(
         "unsupported-locale",
-        "Voice transcription does not support this device language.",
+        "Voice transcription does not support this language.",
         { cause: error },
       );
     }

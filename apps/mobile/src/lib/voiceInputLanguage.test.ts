@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { normalizeLanguages, resolveVoiceInputLanguage } from "./voiceInputLanguage";
+import {
+  normalizeLanguages,
+  resolveVoiceInputLanguage,
+  voiceInputLanguageChoices,
+} from "./voiceInputLanguage";
 
 describe("normalizeLanguages", () => {
   it("keeps string tags in order without duplicates", () => {
@@ -13,11 +17,24 @@ describe("normalizeLanguages", () => {
 });
 
 describe("resolveVoiceInputLanguage", () => {
+  it("prefers an explicit choice", () => {
+    expect(resolveVoiceInputLanguage("fr-CH", ["de-CH"], "en-CH")).toBe("fr-CH");
+  });
+
   it("follows the device's first language rather than the app locale", () => {
-    expect(resolveVoiceInputLanguage(["ko-KR", "en-KR"], "en-KR")).toBe("ko-KR");
+    expect(resolveVoiceInputLanguage(null, ["de-CH", "en-CH"], "en-CH")).toBe("de-CH");
+    expect(resolveVoiceInputLanguage(undefined, ["de-CH"], "en-CH")).toBe("de-CH");
   });
 
   it("falls back to the app locale without a language list", () => {
-    expect(resolveVoiceInputLanguage([], "en-US")).toBe("en-US");
+    expect(resolveVoiceInputLanguage(null, [], "en-US")).toBe("en-US");
+  });
+});
+
+describe("voiceInputLanguageChoices", () => {
+  it("keeps a stored choice that left the device's list", () => {
+    expect(voiceInputLanguageChoices("it-CH", ["de-CH"])).toEqual(["de-CH", "it-CH"]);
+    expect(voiceInputLanguageChoices("de-CH", ["de-CH"])).toEqual(["de-CH"]);
+    expect(voiceInputLanguageChoices(null, ["de-CH"])).toEqual(["de-CH"]);
   });
 });

@@ -84,13 +84,19 @@ describe("getLocalVoiceTranscriber", () => {
     expect(mocks.transcribe).not.toHaveBeenCalled();
   });
 
-  it("transcribes in the device's first language", async () => {
+  it("prepares the device's first language when no language is chosen", async () => {
+    await getLocalVoiceTranscriber(null)!.prepare({ signal: new AbortController().signal });
+    expect(mocks.prepare).toHaveBeenCalledWith("sv-SE");
+  });
+
+  it("prepares and transcribes a chosen language", async () => {
+    mocks.prepare.mockResolvedValue("de-CH");
     const options = { signal: new AbortController().signal };
-    const prepared = await getLocalVoiceTranscriber()!.prepare(options);
+    const prepared = await getLocalVoiceTranscriber("de-CH")!.prepare(options);
     await prepared.transcribe("file:///voice.m4a", options);
 
-    expect(mocks.isAvailable).toHaveBeenCalledWith("sv-SE");
-    expect(mocks.prepare).toHaveBeenCalledWith("sv-SE");
-    expect(mocks.transcribe).toHaveBeenCalledWith(audio, "sv-SE");
+    expect(mocks.isAvailable).toHaveBeenCalledWith("de-CH");
+    expect(mocks.prepare).toHaveBeenCalledWith("de-CH");
+    expect(mocks.transcribe).toHaveBeenCalledWith(audio, "de-CH");
   });
 });

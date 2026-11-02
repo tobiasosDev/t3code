@@ -18,11 +18,14 @@ import {
   microphoneEntryKey,
   microphoneOrder,
 } from "../../lib/microphonePriority";
+import { voiceInputLanguageChoices, voiceInputLanguageLabel } from "../../lib/voiceInputLanguage";
+import { deviceLanguages } from "../../native/deviceLanguages";
 import { getLocalVoiceTranscriber } from "../../native/voiceTranscription";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { ListRowLayout } from "../../components/ui/ListRowLayout";
 import { ThreadSwipeable } from "../home/thread-swipe-actions";
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
+import { ListChoiceRow as SettingsChoiceRow } from "../../components/ui/ListChoiceRow";
 import { SettingsDragHandle } from "./components/SettingsDragHandle";
 import { SettingsSection } from "./components/SettingsSection";
 
@@ -126,6 +129,11 @@ function MicrophoneSettings() {
   const entries = microphoneOrder(
     AsyncResult.isSuccess(preferencesResult) ? preferencesResult.value.microphones : undefined,
   );
+  const selectedLanguage = AsyncResult.isSuccess(preferencesResult)
+    ? preferencesResult.value.voiceInputLanguage
+    : null;
+  const automaticLanguage = deviceLanguages()[0];
+  const languages = voiceInputLanguageChoices(selectedLanguage, deviceLanguages());
   const { permission, request: requestPermission } = useMicrophonePermission();
   const [drag, setDrag] = useState<{ readonly key: string; readonly translation: number } | null>(
     null,
@@ -230,6 +238,32 @@ function MicrophoneSettings() {
           Voice input records from the first connected microphone in this list. Wired and Bluetooth
           devices are added by name after you use voice input with them connected; until then, the
           Other row ranks them. Swipe a device left to forget it.
+        </Text>
+        <SettingsSection title="Language">
+          <SettingsChoiceRow
+            label="Automatic"
+            description={
+              automaticLanguage ? voiceInputLanguageLabel(automaticLanguage) : "App language"
+            }
+            selected={ready && !selectedLanguage}
+            disabled={!ready}
+            onPress={() => savePreferences({ voiceInputLanguage: null })}
+          />
+          {languages.map((tag) => (
+            <SettingsChoiceRow
+              key={tag}
+              label={voiceInputLanguageLabel(tag)}
+              selected={selectedLanguage === tag}
+              separated
+              disabled={!ready}
+              onPress={() => savePreferences({ voiceInputLanguage: tag })}
+            />
+          ))}
+        </SettingsSection>
+        <Text className="px-2 text-sm text-foreground-muted">
+          Automatic uses the first language in your device's language list. To add a language, add
+          it in Settings › General › Language & Region. Apple downloads its speech model the first
+          time you record in it.
         </Text>
       </ScrollView>
     </View>
