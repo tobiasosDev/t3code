@@ -30,7 +30,7 @@ export interface WatchWaitingItem {
   readonly agentMessage?: string;
   readonly title: string;
   readonly detail?: string;
-  /** Set when the watch can answer the question: a single question. */
+  /** Set when the watch can answer: one question it can tap or dictate an answer to. */
   readonly questionId?: string;
   /** The question takes a free-text (dictated) answer. */
   readonly allowsText?: boolean;
@@ -175,7 +175,8 @@ function waitingItems(input: WatchThreadInput): WatchWaitingItem[] {
       requestId: request.requestId,
       since: toMs(request.createdAt),
       title: clip(question.question) ?? question.header,
-      ...(request.questions.length === 1
+      ...(request.questions.length === 1 &&
+      (!question.multiSelect || question.allowCustomAnswer !== false)
         ? { questionId: question.id, allowsText: question.allowCustomAnswer !== false }
         : {}),
       ...(single

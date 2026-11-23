@@ -7,6 +7,8 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
   @Published private(set) var snapshot: WatchSnapshot = .empty
   @Published private(set) var sentItemIds: Set<String> = []
   @Published private(set) var phoneReachable = false
+  /// Answers need an activated session; until then the cards stay read-only.
+  @Published private(set) var canSend = false
 
   private let cacheKey = "t3.watch.snapshot"
 
@@ -30,21 +32,11 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
   var hasSnapshot: Bool { snapshot.generatedAt > 0 }
 
   func send(_ action: WatchAction) {
+    let session = WCSession.default
+    guard session.activationState == .activated else { return }
     let payload = action.dictionary
     sentItemIds.insert(action.item.id)
     WKInterfaceDevice.current().play(.success)
-    let session = WCSession.default
-    guard session.activationState == .activated else {
-      unsentPayloads.append(payload)
-      return
-    }
-    deliver(payload, over: session)
-  }
-
-  /// Answers tapped before the session activated wait here; transferUserInfo then queues them.
-  private var unsentPayloads: [[String: Any]] = []
-
-  private func deliver(_ payload: [String: Any], over session: WCSession) {
     if session.isReachable {
       session.sendMessage(payload, replyHandler: nil) { _ in
         session.transferUserInfo(payload)
@@ -77,12 +69,8 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
   func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
     apply(session.receivedApplicationContext)
     updateReachability(session)
-    guard activationState == .activated else { return }
-    DispatchQueue.main.async {
-      let pending = self.unsentPayloads
-      self.unsentPayloads.removeAll()
-      for payload in pending { self.deliver(payload, over: session) }
-    }
+    let activated = activationState == .activated
+    DispatchQueue.main.async { self.canSend = activated }
   }
 
   func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {

@@ -51,7 +51,7 @@ struct WaitingCard: View {
         if let user = item.userMessage, !user.isEmpty {
           ChatBubble(text: user, fromUser: true)
         }
-        if let agent = item.agentMessage, !agent.isEmpty, agent != item.title {
+        if let agent = item.agentMessage, !agent.isEmpty, item.kind != .question || agent != item.title {
           ChatBubble(text: agent, fromUser: false)
         }
 
@@ -73,7 +73,7 @@ struct WaitingCard: View {
         case .question:
           ChatBubble(text: item.title, fromUser: false)
           if item.questionId == nil {
-            Text("Mehrere Fragen. Beantworte sie auf dem iPhone.")
+            Text("Beantworte das auf dem iPhone.")
               .font(.footnote)
               .foregroundStyle(.secondary)
           }
@@ -82,6 +82,7 @@ struct WaitingCard: View {
               store.send(WatchAction(kind: .answer, item: item, optionId: option.id))
             }
             .buttonStyle(.glass)
+            .disabled(!store.canSend)
           }
         }
 
@@ -100,6 +101,7 @@ struct WaitingCard: View {
             Image(systemName: "xmark")
           }
           .tint(.red)
+          .disabled(!store.canSend)
           Spacer()
           Button {
             store.send(WatchAction(kind: .approve, item: item))
@@ -107,9 +109,11 @@ struct WaitingCard: View {
             Label("Freigeben", systemImage: "checkmark")
           }
           .buttonStyle(.glassProminent)
+          .disabled(!store.canSend)
         case .question where item.questionId != nil && item.allowsText == true, .finished:
           Spacer()
           ReplyButton(item: item)
+            .disabled(!store.canSend)
         case .question:
           EmptyView()
         }

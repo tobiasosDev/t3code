@@ -13,7 +13,7 @@ import { AppState, Platform } from "react-native";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { readEnvironmentScope } from "../../state/session";
 import { enqueueThreadOutboxMessage } from "../../state/thread-outbox";
-import { threadEnvironment } from "../../state/threads";
+import { environmentThreadShells, threadEnvironment } from "../../state/threads";
 import { decodeWatchOptionId, watchSnapshotKey } from "./watchSnapshot";
 import { readWatchSnapshot, watchSnapshotInputsAtom } from "./watchSnapshotAtom";
 
@@ -46,10 +46,23 @@ interface NativeWatchBridge {
 
 const PUSH_DELAY_MS = 750;
 const RETRY_DELAY_MS = 5_000;
-// A request that keeps failing while its environment is connected was most likely answered elsewhere.
-const MAX_FAILED_ATTEMPTS = 4;
 
 type ActionOutcome = "done" | "retry" | "drop";
+
+/** An answer whose request is gone (answered on another device, or the run ended) is dropped. */
+function requestIsGone(action: WatchAction): boolean {
+  if (action.type === "reply" && !action.requestId) return false;
+  const thread = appAtomRegistry.get(
+    environmentThreadShells.threadShellAtom({
+      environmentId: EnvironmentId.make(action.environmentId),
+      threadId: ThreadId.make(action.threadId),
+    }),
+  );
+  if (thread === null) return false;
+  return action.type === "approve" || action.type === "deny"
+    ? !thread.hasPendingApprovals
+    : !thread.hasPendingUserInput;
+}
 
 async function respond<W, A, E>(command: AtomCommand<W, A, E>, input: W): Promise<ActionOutcome> {
   const result = await runAtomCommand(appAtomRegistry, command, input, {
@@ -58,10 +71,11 @@ async function respond<W, A, E>(command: AtomCommand<W, A, E>, input: W): Promis
   return result._tag === "Failure" ? "retry" : "done";
 }
 
-async function performWatchAction(action: WatchAction): Promise<ActionOutcome | "offline"> {
+async function performWatchAction(action: WatchAction): Promise<ActionOutcome> {
   const environmentId = EnvironmentId.make(action.environmentId);
   const threadId = ThreadId.make(action.threadId);
-  if (!readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) return "offline";
+  if (requestIsGone(action)) return "drop";
+  if (!readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) return "retry";
 
   if (action.type === "approve" || action.type === "deny") {
     return respond(threadEnvironment.respondToApproval, {
@@ -129,7 +143,6 @@ export function installWatchConnectivity(): () => void {
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let unsubscribeSnapshot: (() => void) | null = null;
   const inFlight = new Set<string>();
-  const failedAttempts = new Map<string, number>();
 
   const watchReady = () => {
     const state = native.getState();
@@ -166,22 +179,14 @@ export function installWatchConnectivity(): () => void {
       drain();
     }, RETRY_DELAY_MS);
   };
-  const finish = (action: WatchAction, outcome: ActionOutcome | "offline") => {
+  // Failed answers stay queued (also across launches) until they land or their request is gone.
+  const finish = (action: WatchAction, outcome: ActionOutcome) => {
     inFlight.delete(action.id);
     if (disposed) return;
     if (outcome === "retry") {
-      const attempts = (failedAttempts.get(action.id) ?? 0) + 1;
-      failedAttempts.set(action.id, attempts);
-      if (attempts < MAX_FAILED_ATTEMPTS) {
-        scheduleRetry();
-        return;
-      }
-    }
-    if (outcome === "offline") {
       scheduleRetry();
       return;
     }
-    failedAttempts.delete(action.id);
     native.acknowledgeActions([action.id]);
   };
   const drain = () => {
@@ -201,15 +206,15 @@ export function installWatchConnectivity(): () => void {
   // Detail streams for waiting threads stay closed unless a watch can show them.
   const sync = () => {
     if (disposed) return;
-    const ready = watchReady();
-    if (ready && unsubscribeSnapshot === null) {
-      unsubscribeSnapshot = appAtomRegistry.subscribe(watchSnapshotInputsAtom, schedulePush);
-      lastKey = null;
-      schedulePush();
-    } else if (!ready && unsubscribeSnapshot !== null) {
-      unsubscribeSnapshot();
+    if (!watchReady()) {
+      unsubscribeSnapshot?.();
       unsubscribeSnapshot = null;
+      return;
     }
+    unsubscribeSnapshot ??= appAtomRegistry.subscribe(watchSnapshotInputsAtom, schedulePush);
+    // A newly paired or reactivated watch has no snapshot yet.
+    lastKey = null;
+    schedulePush();
   };
 
   const actionSubscription = native.addListener("action", drain);

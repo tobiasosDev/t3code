@@ -77,10 +77,14 @@ final class T3WatchSession: NSObject, WCSessionDelegate {
     onStateChange?()
   }
 
-  func sessionDidBecomeInactive(_ session: WCSession) {}
+  func sessionDidBecomeInactive(_ session: WCSession) {
+    onStateChange?()
+  }
 
+  // Switching watches deactivates the session; reactivating reports the new watch's state.
   func sessionDidDeactivate(_ session: WCSession) {
     session.activate()
+    onStateChange?()
   }
 
   func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
