@@ -50,6 +50,8 @@ interface NativeWatchBridge {
 
 const PUSH_DELAY_MS = 750;
 const RETRY_DELAY_MS = 5_000;
+// The session does not always report a newly installed watch app, so readiness is re-read.
+const READY_CHECK_MS = 15_000;
 
 type ActionOutcome = "done" | "retry" | "drop";
 
@@ -233,10 +235,14 @@ export function installWatchConnectivity(): () => void {
     schedulePush();
     drain();
   });
+  const readyCheck = setInterval(() => {
+    if (unsubscribeSnapshot === null) sync();
+  }, READY_CHECK_MS);
   sync();
   drain();
 
   return () => {
+    clearInterval(readyCheck);
     disposed = true;
     if (pushTimer !== null) clearTimeout(pushTimer);
     if (retryTimer !== null) clearTimeout(retryTimer);
