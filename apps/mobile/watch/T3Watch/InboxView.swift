@@ -47,6 +47,8 @@ struct WaitingCard: View {
         }
         .font(.footnote)
         .foregroundStyle(.secondary)
+        // Keeps the age clear of the page indicator.
+        .padding(.trailing, 8)
 
         if let user = item.userMessage, !user.isEmpty {
           ChatBubble(text: user, fromUser: true)
@@ -90,7 +92,9 @@ struct WaitingCard: View {
           GraphicRow(graphic: graphic)
         }
       }
+      .frame(maxWidth: .infinity, alignment: .leading)
     }
+    // Round icon buttons in the native bottom bar: nothing wraps on a 49 mm screen.
     .toolbar {
       ToolbarItemGroup(placement: .bottomBar) {
         switch item.kind {
@@ -101,14 +105,16 @@ struct WaitingCard: View {
             Image(systemName: "xmark")
           }
           .tint(.red)
+          .accessibilityLabel("Ablehnen")
           .disabled(!store.canSend)
           Spacer()
           Button {
             store.send(WatchAction(kind: .approve, item: item))
           } label: {
-            Label("Freigeben", systemImage: "checkmark")
+            Image(systemName: "checkmark")
           }
           .buttonStyle(.glassProminent)
+          .accessibilityLabel("Freigeben")
           .disabled(!store.canSend)
         case .question where item.questionId != nil && item.allowsText == true, .finished:
           Spacer()
@@ -129,7 +135,8 @@ struct ReplyButton: View {
 
   var body: some View {
     TextFieldLink(prompt: Text("Antwort an den Agent")) {
-      Label("Sprechen", systemImage: "mic.fill")
+      Image(systemName: "mic.fill")
+        .accessibilityLabel("Sprechen")
     } onSubmit: { text in
       let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !trimmed.isEmpty else { return }

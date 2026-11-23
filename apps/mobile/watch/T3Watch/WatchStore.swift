@@ -1,6 +1,7 @@
 import Foundation
 import WatchConnectivity
 import WatchKit
+import WidgetKit
 
 /// Receives snapshots from the iPhone app and sends the user's answers back.
 final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
@@ -11,6 +12,15 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
   @Published private(set) var canSend = false
 
   private let cacheKey = "t3.watch.snapshot"
+
+  #if DEBUG
+  /// Previews and layout checks: a fixed snapshot, no WatchConnectivity.
+  init(preview: WatchSnapshot) {
+    super.init()
+    snapshot = preview
+    canSend = true
+  }
+  #endif
 
   override init() {
     super.init()
@@ -37,6 +47,7 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
     let payload = action.dictionary
     sentItemIds.insert(action.item.id)
     WKInterfaceDevice.current().play(.success)
+    publishSummary()
     if session.isReachable {
       session.sendMessage(payload, replyHandler: nil) { _ in
         session.transferUserInfo(payload)
@@ -56,7 +67,19 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
       let ids = Set(next.waiting.map(\.id))
       self.sentItemIds = self.sentItemIds.intersection(ids)
       UserDefaults.standard.set(data, forKey: self.cacheKey)
+      self.publishSummary()
     }
+  }
+
+  /// Leaves the widget what it shows and asks WidgetKit to redraw it.
+  private func publishSummary() {
+    guard let defaults = WatchSummary.defaults else { return }
+    let first = waiting.first
+    defaults.set(waiting.count, forKey: WatchSummary.waitingCount)
+    defaults.set(snapshot.running.count, forKey: WatchSummary.runningCount)
+    defaults.set(first?.title, forKey: WatchSummary.firstTitle)
+    defaults.set(first?.threadTitle, forKey: WatchSummary.firstThread)
+    WidgetCenter.shared.reloadAllTimelines()
   }
 
   private func updateReachability(_ session: WCSession) {
