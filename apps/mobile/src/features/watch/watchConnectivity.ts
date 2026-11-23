@@ -13,7 +13,11 @@ import { AppState, Platform } from "react-native";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { readEnvironmentScope } from "../../state/session";
 import { enqueueThreadOutboxMessage } from "../../state/thread-outbox";
-import { environmentThreadShells, threadEnvironment } from "../../state/threads";
+import {
+  environmentThreadDetails,
+  environmentThreadShells,
+  threadEnvironment,
+} from "../../state/threads";
 import { decodeWatchOptionId, watchSnapshotKey } from "./watchSnapshot";
 import { readWatchSnapshot, watchSnapshotInputsAtom } from "./watchSnapshotAtom";
 
@@ -52,16 +56,19 @@ type ActionOutcome = "done" | "retry" | "drop";
 /** An answer whose request is gone (answered on another device, or the run ended) is dropped. */
 function requestIsGone(action: WatchAction): boolean {
   if (action.type === "reply" && !action.requestId) return false;
-  const thread = appAtomRegistry.get(
-    environmentThreadShells.threadShellAtom({
-      environmentId: EnvironmentId.make(action.environmentId),
-      threadId: ThreadId.make(action.threadId),
-    }),
-  );
+  const ref = {
+    environmentId: EnvironmentId.make(action.environmentId),
+    threadId: ThreadId.make(action.threadId),
+  };
+  const thread = appAtomRegistry.get(environmentThreadShells.threadShellAtom(ref));
   if (thread === null) return false;
-  return action.type === "approve" || action.type === "deny"
-    ? !thread.hasPendingApprovals
-    : !thread.hasPendingUserInput;
+  const approval = action.type === "approve" || action.type === "deny";
+  if (!(approval ? thread.hasPendingApprovals : thread.hasPendingUserInput)) return true;
+  // The thread still waits on something; drop only if this request is no longer among them.
+  const requests = appAtomRegistry.get(environmentThreadDetails.pendingRequestsAtom(ref));
+  if (requests === null) return false;
+  const pending = approval ? requests.approvals : requests.userInputs;
+  return !pending.some((request) => request.requestId === action.requestId);
 }
 
 async function respond<W, A, E>(command: AtomCommand<W, A, E>, input: W): Promise<ActionOutcome> {
