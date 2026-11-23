@@ -111,6 +111,7 @@ import { pruneNewTaskBranchCheckouts } from "./features/threads/NewTaskDraftRout
 import { installAppUpdateChecks } from "./features/updates/app-updates";
 
 import "../global.css";
+import { installWatchConnectivity } from "./features/watch/watchConnectivity";
 
 if (process.env.EXPO_PUBLIC_SHOWCASE === "1") {
   prepareNativeShowcaseCapture();
@@ -217,6 +218,7 @@ const appServiceDisposers = [
   installAppShortcuts(linkToAppPath),
   installAppUpdateChecks(),
   installShowcaseCapture(rootPathnameFromState),
+  installWatchConnectivity(),
 ];
 disposeOnFoundationReplace(typeof module === "undefined" ? undefined : module.hot, () => {
   for (const dispose of appServiceDisposers) dispose();

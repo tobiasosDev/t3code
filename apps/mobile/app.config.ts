@@ -468,6 +468,9 @@ const config: ExpoConfig = {
     "./plugins/withAndroidWindowDisplayMetrics.cjs",
     "./plugins/withAndroidTabletOrientation.cjs",
     ...(isIosPersonalTeamBuild ? ["./plugins/withoutIosPersonalTeamCapabilities.cjs"] : []),
+    ...(repoEnv.T3CODE_IOS_WATCH !== "0"
+      ? [["./plugins/withWatchApp.cjs", { iconPath: variant.assets.appIcon }] as [string, unknown]]
+      : []),
   ],
   extra: {
     appVariant: APP_VARIANT,
