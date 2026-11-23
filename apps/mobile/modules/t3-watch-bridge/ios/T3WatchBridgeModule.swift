@@ -1,14 +1,15 @@
 import ExpoModulesCore
 import WatchConnectivity
 
-/// Owns the iPhone side of WatchConnectivity. Actions from the watch queue here (and in
-/// UserDefaults) until JavaScript drains them, so a tap on the watch survives a suspended app.
+/// Owns the iPhone side of WatchConnectivity. Actions from the watch stay queued in
+/// UserDefaults until JavaScript acknowledges them, so a tap survives a suspended or offline app.
 final class T3WatchSession: NSObject, WCSessionDelegate {
   static let shared = T3WatchSession()
 
   private let queueKey = "t3.watch.pendingActions"
   private let lock = NSLock()
   var onAction: (() -> Void)?
+  var onStateChange: (() -> Void)?
 
   func activate() {
     guard WCSession.isSupported() else { return }
@@ -36,12 +37,22 @@ final class T3WatchSession: NSObject, WCSessionDelegate {
     try session.updateApplicationContext(["snapshot": json])
   }
 
-  func drain() -> [[String: Any]] {
+  func pendingActions() -> [[String: Any]] {
     lock.lock()
     defer { lock.unlock() }
+    return UserDefaults.standard.array(forKey: queueKey) as? [[String: Any]] ?? []
+  }
+
+  func acknowledge(_ ids: [String]) {
+    lock.lock()
+    defer { lock.unlock() }
+    let remove = Set(ids)
     let pending = UserDefaults.standard.array(forKey: queueKey) as? [[String: Any]] ?? []
-    UserDefaults.standard.removeObject(forKey: queueKey)
-    return pending
+    let kept = pending.filter { action in
+      guard let id = action["id"] as? String else { return false }
+      return !remove.contains(id)
+    }
+    UserDefaults.standard.set(kept, forKey: queueKey)
   }
 
   private func enqueue(_ action: [String: Any]) {
@@ -58,7 +69,13 @@ final class T3WatchSession: NSObject, WCSessionDelegate {
 
   // MARK: WCSessionDelegate
 
-  func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {}
+  func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
+    onStateChange?()
+  }
+
+  func sessionWatchStateDidChange(_ session: WCSession) {
+    onStateChange?()
+  }
 
   func sessionDidBecomeInactive(_ session: WCSession) {}
 
@@ -79,17 +96,21 @@ public final class T3WatchBridgeModule: Module {
   public func definition() -> ModuleDefinition {
     Name("T3WatchBridge")
 
-    Events("action")
+    Events("action", "state")
 
     OnCreate {
       T3WatchSession.shared.onAction = { [weak self] in
         self?.sendEvent("action", [:])
+      }
+      T3WatchSession.shared.onStateChange = { [weak self] in
+        self?.sendEvent("state", [:])
       }
       T3WatchSession.shared.activate()
     }
 
     OnDestroy {
       T3WatchSession.shared.onAction = nil
+      T3WatchSession.shared.onStateChange = nil
     }
 
     Function("getState") { () -> [String: Any] in
@@ -100,8 +121,12 @@ public final class T3WatchBridgeModule: Module {
       try T3WatchSession.shared.updateSnapshot(json)
     }
 
-    Function("drainActions") { () -> [[String: Any]] in
-      T3WatchSession.shared.drain()
+    Function("pendingActions") { () -> [[String: Any]] in
+      T3WatchSession.shared.pendingActions()
+    }
+
+    Function("acknowledgeActions") { (ids: [String]) in
+      T3WatchSession.shared.acknowledge(ids)
     }
   }
 }

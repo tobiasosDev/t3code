@@ -88,6 +88,8 @@ describe("buildWatchSnapshot", () => {
     expect(question).toMatchObject({
       title: "Soll ich v1 auch abdecken?",
       userMessage: "Erklär im Log, warum.",
+      questionId: "scope",
+      allowsText: true,
     });
     expect(question?.options?.map((option) => option.label)).toEqual(["Ja", "Nein"]);
     expect(decodeWatchOptionId(question?.options?.[1]?.id ?? "")).toEqual({

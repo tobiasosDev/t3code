@@ -34,7 +34,17 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
     sentItemIds.insert(action.item.id)
     WKInterfaceDevice.current().play(.success)
     let session = WCSession.default
-    guard session.activationState == .activated else { return }
+    guard session.activationState == .activated else {
+      unsentPayloads.append(payload)
+      return
+    }
+    deliver(payload, over: session)
+  }
+
+  /// Answers tapped before the session activated wait here; transferUserInfo then queues them.
+  private var unsentPayloads: [[String: Any]] = []
+
+  private func deliver(_ payload: [String: Any], over session: WCSession) {
     if session.isReachable {
       session.sendMessage(payload, replyHandler: nil) { _ in
         session.transferUserInfo(payload)
@@ -67,6 +77,12 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
   func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
     apply(session.receivedApplicationContext)
     updateReachability(session)
+    guard activationState == .activated else { return }
+    DispatchQueue.main.async {
+      let pending = self.unsentPayloads
+      self.unsentPayloads.removeAll()
+      for payload in pending { self.deliver(payload, over: session) }
+    }
   }
 
   func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {

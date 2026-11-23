@@ -51,7 +51,7 @@ struct WaitingCard: View {
         if let user = item.userMessage, !user.isEmpty {
           ChatBubble(text: user, fromUser: true)
         }
-        if let agent = item.agentMessage, !agent.isEmpty {
+        if let agent = item.agentMessage, !agent.isEmpty, agent != item.title {
           ChatBubble(text: agent, fromUser: false)
         }
 
@@ -71,8 +71,11 @@ struct WaitingCard: View {
         case .finished:
           EmptyView()
         case .question:
-          if item.agentMessage?.isEmpty ?? true {
-            ChatBubble(text: item.title, fromUser: false)
+          ChatBubble(text: item.title, fromUser: false)
+          if item.questionId == nil {
+            Text("Mehrere Fragen. Beantworte sie auf dem iPhone.")
+              .font(.footnote)
+              .foregroundStyle(.secondary)
           }
           ForEach(item.options ?? []) { option in
             Button(option.label) {
@@ -104,9 +107,11 @@ struct WaitingCard: View {
             Label("Freigeben", systemImage: "checkmark")
           }
           .buttonStyle(.glassProminent)
-        case .question, .finished:
+        case .question where item.questionId != nil && item.allowsText == true, .finished:
           Spacer()
           ReplyButton(item: item)
+        case .question:
+          EmptyView()
         }
       }
     }

@@ -1,15 +1,16 @@
 import { Atom } from "effect/reactivity";
 
 import { environmentProjects } from "../../state/projects";
-import { environmentThreadDetails, steadyNavigationThreadShellsAtom } from "../../state/threads";
+import { environmentThreadDetails, environmentThreadShells } from "../../state/threads";
 import { buildWatchSnapshot, watchChatFromTimeline, type WatchThreadInput } from "./watchSnapshot";
 
 /**
- * Everything the watch shows. Only threads that wait on the user open a detail stream,
- * the same gate childThreadApprovalsAtom uses.
+ * Everything the watch shows, subagent tasks included so their approvals reach the watch.
+ * Only threads that wait on the user open a detail stream, the gate childThreadApprovalsAtom uses.
  */
 export const watchSnapshotInputsAtom = Atom.make((get): ReadonlyArray<WatchThreadInput> =>
-  get(steadyNavigationThreadShellsAtom).map((thread) => {
+  get(environmentThreadShells.visibleThreadShellsAtom).flatMap((thread) => {
+    if (thread.archivedAt !== null) return [];
     const ref = { environmentId: thread.environmentId, threadId: thread.id };
     const waiting = thread.hasPendingApprovals || thread.hasPendingUserInput;
     const project = get(
@@ -18,14 +19,16 @@ export const watchSnapshotInputsAtom = Atom.make((get): ReadonlyArray<WatchThrea
         projectId: thread.projectId,
       }),
     );
-    return {
-      thread,
-      projectTitle: project?.title ?? null,
-      requests: waiting ? get(environmentThreadDetails.pendingRequestsAtom(ref)) : null,
-      chat: waiting
-        ? watchChatFromTimeline(get(environmentThreadDetails.visibleTurnItemsAtom(ref)))
-        : null,
-    };
+    return [
+      {
+        thread,
+        projectTitle: project?.title ?? null,
+        requests: waiting ? get(environmentThreadDetails.pendingRequestsAtom(ref)) : null,
+        chat: waiting
+          ? watchChatFromTimeline(get(environmentThreadDetails.visibleTurnItemsAtom(ref)))
+          : null,
+      },
+    ];
   }),
 ).pipe(Atom.withLabel("watch-snapshot-inputs"));
 

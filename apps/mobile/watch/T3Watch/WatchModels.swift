@@ -27,6 +27,9 @@ struct WaitingItem: Codable, Equatable, Identifiable {
   var agentMessage: String?
   var title: String
   var detail: String?
+  /// Set when the watch can answer: a single question.
+  var questionId: String?
+  var allowsText: Bool?
   var options: [QuestionOption]?
   var graphics: [Graphic]?
 }
@@ -69,6 +72,7 @@ struct WatchAction {
       "requestId": item.requestId,
       "sentAt": Date().timeIntervalSince1970 * 1000,
     ]
+    if let questionId = item.questionId { dict["questionId"] = questionId }
     if let text { dict["text"] = text }
     if let optionId { dict["optionId"] = optionId }
     return dict

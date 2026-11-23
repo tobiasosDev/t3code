@@ -30,6 +30,10 @@ export interface WatchWaitingItem {
   readonly agentMessage?: string;
   readonly title: string;
   readonly detail?: string;
+  /** Set when the watch can answer the question: a single question. */
+  readonly questionId?: string;
+  /** The question takes a free-text (dictated) answer. */
+  readonly allowsText?: boolean;
   readonly options?: ReadonlyArray<{ readonly id: string; readonly label: string }>;
   readonly graphics?: ReadonlyArray<{ readonly id: string; readonly title: string }>;
 }
@@ -171,9 +175,12 @@ function waitingItems(input: WatchThreadInput): WatchWaitingItem[] {
       requestId: request.requestId,
       since: toMs(request.createdAt),
       title: clip(question.question) ?? question.header,
+      ...(request.questions.length === 1
+        ? { questionId: question.id, allowsText: question.allowCustomAnswer !== false }
+        : {}),
       ...(single
         ? {
-            options: question.options.slice(0, 4).map((option) => ({
+            options: question.options.map((option) => ({
               id: encodeWatchOptionId(question.id, option.value ?? option.label),
               label: option.label,
             })),
@@ -221,6 +228,8 @@ export function buildWatchSnapshot(
       waiting.push(...waitingItems(input));
       continue;
     }
+    // Subagent tasks only surface when they wait on the user.
+    if (thread.lineage.parentThreadId !== null) continue;
     if (status === "working" || status === "waiting") {
       running.push({
         environmentId: thread.environmentId,
