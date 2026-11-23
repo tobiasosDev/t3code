@@ -6,10 +6,9 @@ struct WatchSnapshot: Codable, Equatable {
   var v: Int
   var generatedAt: Double
   var waiting: [WaitingItem]
-  var running: [RunningThread]
   var doneToday: Int
 
-  static let empty = WatchSnapshot(v: 1, generatedAt: 0, waiting: [], running: [], doneToday: 0)
+  static let empty = WatchSnapshot(v: 1, generatedAt: 0, waiting: [], doneToday: 0)
 }
 
 struct WaitingItem: Codable, Equatable, Identifiable {
@@ -42,25 +41,6 @@ struct QuestionOption: Codable, Equatable, Identifiable {
 struct Graphic: Codable, Equatable, Identifiable {
   var id: String
   var title: String
-}
-
-struct RunningThread: Codable, Hashable, Identifiable {
-  var id: String { "\(environmentId)/\(threadId)" }
-  var environmentId: String
-  var threadId: String
-  var title: String
-  var project: String?
-  var since: Double
-  var userMessage: String?
-  var agentMessage: String?
-
-  /// A reply to a running thread goes into the thread like a finished card's reply.
-  var replyTarget: WaitingItem {
-    WaitingItem(
-      id: "\(id)/running", kind: .finished, environmentId: environmentId, threadId: threadId,
-      requestId: "", threadTitle: title, project: project, since: since,
-      userMessage: userMessage, agentMessage: agentMessage, title: title)
-  }
 }
 
 /// What the watch asks the iPhone to do. Sent as a flat [String: Any] dictionary.

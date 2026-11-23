@@ -76,7 +76,6 @@ final class WatchStore: NSObject, ObservableObject, WCSessionDelegate {
     guard let defaults = WatchSummary.defaults else { return }
     let first = waiting.first
     defaults.set(waiting.count, forKey: WatchSummary.waitingCount)
-    defaults.set(snapshot.running.count, forKey: WatchSummary.runningCount)
     defaults.set(first?.title, forKey: WatchSummary.firstTitle)
     defaults.set(first?.threadTitle, forKey: WatchSummary.firstThread)
     WidgetCenter.shared.reloadAllTimelines()

@@ -98,34 +98,54 @@ describe("buildWatchSnapshot", () => {
     });
   });
 
-  it("sends running threads with their chat so the watch can open them", () => {
-    const thread = makeThreadShellFixture({
+  it("lists finished threads that are not settled, newest first, and skips working ones", () => {
+    const finishedRun = { status: "completed", completedAt: "2026-11-23T11:50:00.000Z" } as never;
+    const older = makeThreadShellFixture({
+      id: ThreadId.make("thread-older"),
+      title: "Make Suspense transitions buttery",
+      latestRun: { status: "completed", completedAt: "2026-11-23T09:00:00.000Z" } as never,
+    });
+    const newer = makeThreadShellFixture({
+      id: ThreadId.make("thread-newer"),
       title: "Stream the shell before the data",
+      latestRun: finishedRun,
+    });
+    const settled = makeThreadShellFixture({
+      id: ThreadId.make("thread-settled"),
+      title: "Teach penguins to wait patiently",
+      latestRun: finishedRun,
+      settledOverride: "settled",
+    });
+    const working = makeThreadShellFixture({
+      id: ThreadId.make("thread-working"),
+      title: "Turn hydration warnings into haikus",
+      latestRun: finishedRun,
       runtime: { status: "running", updatedAt: "2026-11-23T11:53:00.000Z" } as never,
     });
+    const chat = {
+      userMessage: "Zeig die Shell sofort.",
+      agentMessage: "Stream steht.",
+      graphics: [],
+    };
+
     const snapshot = buildWatchSnapshot(
-      [
-        {
-          thread,
-          projectTitle: "moonbase",
-          requests: null,
-          chat: {
-            userMessage: "Zeig die Shell sofort.",
-            agentMessage: "Baue den Stream um.",
-            graphics: [],
-          },
-        },
-      ],
+      [older, settled, working, newer].map((thread) => ({
+        thread,
+        projectTitle: "moonbase",
+        requests: null,
+        chat: thread === newer ? chat : null,
+      })),
       NOW,
     );
-    expect(snapshot.running).toEqual([
-      expect.objectContaining({
-        title: "Stream the shell before the data",
-        project: "moonbase",
-        userMessage: "Zeig die Shell sofort.",
-        agentMessage: "Baue den Stream um.",
-      }),
+
+    expect(snapshot.waiting.map((item) => [item.kind, item.threadTitle])).toEqual([
+      ["finished", "Stream the shell before the data"],
+      ["finished", "Make Suspense transitions buttery"],
     ]);
+    expect(snapshot.waiting[0]).toMatchObject({
+      userMessage: "Zeig die Shell sofort.",
+      agentMessage: "Stream steht.",
+    });
   });
 
   it("skips threads whose requests have not loaded yet", () => {

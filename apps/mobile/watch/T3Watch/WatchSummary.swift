@@ -6,7 +6,6 @@ enum WatchSummary {
   static let waitingCount = "t3.watch.summary.waitingCount"
   static let firstTitle = "t3.watch.summary.firstTitle"
   static let firstThread = "t3.watch.summary.firstThread"
-  static let runningCount = "t3.watch.summary.runningCount"
 
   /// "<ios bundle id>.watchkitapp" shares "group.<ios bundle id>".
   static var defaults: UserDefaults? {

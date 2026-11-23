@@ -1,24 +1,25 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import type { PendingThreadRequests } from "@t3tools/client-runtime/state/thread-requests";
+import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
+import { isListedThreadLineage } from "@t3tools/contracts";
 import { htmlRenderFromToolItem } from "@t3tools/shared/toolOutput";
 import { msg } from "gt-react-native";
 
 import { m } from "../../i18n/messages";
 
-import { resolveThreadListV2Status, threadHasUnseenCompletion } from "../threads/threadListV2";
+import { resolveThreadListV2Status, type ThreadListV2Status } from "../threads/threadListV2";
 
 /** Wire format for the Apple Watch app. Keep in sync with watch/T3Watch/WatchModels.swift. */
 export interface WatchSnapshot {
   readonly v: 1;
   readonly generatedAt: number;
   readonly waiting: ReadonlyArray<WatchWaitingItem>;
-  readonly running: ReadonlyArray<WatchRunningThread>;
   readonly doneToday: number;
 }
 
 export interface WatchWaitingItem {
   readonly id: string;
-  /** "finished": the agent stopped and its reply was not read yet; the watch offers a spoken reply. */
+  /** "finished": the agent stopped and the thread is not settled; the watch offers a spoken reply. */
   readonly kind: "approval" | "question" | "finished";
   readonly environmentId: string;
   readonly threadId: string;
@@ -38,16 +39,6 @@ export interface WatchWaitingItem {
   readonly graphics?: ReadonlyArray<{ readonly id: string; readonly title: string }>;
 }
 
-export interface WatchRunningThread {
-  readonly environmentId: string;
-  readonly threadId: string;
-  readonly title: string;
-  readonly project?: string;
-  readonly since: number;
-  readonly userMessage?: string;
-  readonly agentMessage?: string;
-}
-
 /** The parts of a thread's visible timeline the watch shows. */
 export interface WatchThreadChat {
   readonly userMessage?: string;
@@ -63,9 +54,26 @@ export interface WatchThreadInput {
   readonly chat: WatchThreadChat | null;
 }
 
-const MAX_FINISHED = 5;
-const FINISHED_WINDOW_MS = 24 * 60 * 60 * 1000;
+// Keeps the WatchConnectivity context well under its size limit.
+const MAX_FINISHED = 20;
 const MAX_TEXT = 600;
+const FINISHED_STATUSES: ReadonlySet<ThreadListV2Status> = new Set([
+  "ready",
+  "failed",
+  "limited",
+  "request",
+]);
+
+/**
+ * A finished thread the iPhone still lists for the user: it ran, stopped, and is neither
+ * settled, snoozed nor a subagent task. Working and settled threads stay off the watch.
+ */
+export function isWatchFinished(thread: EnvironmentThreadShell, nowIso: string): boolean {
+  if (thread.archivedAt !== null || !isListedThreadLineage(thread.lineage)) return false;
+  if (thread.latestRun === null || thread.settledOverride === "settled") return false;
+  if (effectiveSnoozed(thread, { now: nowIso })) return false;
+  return FINISHED_STATUSES.has(resolveThreadListV2Status(thread));
+}
 
 function clip(text: string | undefined | null): string | undefined {
   const trimmed = text?.trim();
@@ -194,22 +202,26 @@ function waitingItems(input: WatchThreadInput): WatchWaitingItem[] {
   return items;
 }
 
-function finishedItem(input: WatchThreadInput): WatchWaitingItem | null {
+function finishedTitle(status: ThreadListV2Status): string {
+  if (status === "failed") return m(msg("Failed"));
+  if (status === "limited") return m(msg("Usage limit reached"));
+  if (status === "request") return m(msg("A guest is waiting"));
+  return m(msg("Done"));
+}
+
+function finishedItem(input: WatchThreadInput): WatchWaitingItem {
   const { thread } = input;
   const latest = thread.source.latestVisibleMessage;
-  const agentMessage = latest?.role === "assistant" ? clip(latest.text) : undefined;
-  if (!agentMessage) return null;
+  const agentMessage =
+    input.chat?.agentMessage ?? (latest?.role === "assistant" ? clip(latest.text) : undefined);
   return {
-    environmentId: thread.environmentId,
-    threadId: thread.id,
-    threadTitle: thread.title,
-    ...(input.projectTitle ? { project: input.projectTitle } : {}),
+    ...base(input),
+    ...(agentMessage ? { agentMessage } : {}),
     id: `${thread.environmentId}/${thread.id}/finished/${thread.latestRun?.completedAt ?? ""}`,
     kind: "finished",
     requestId: "",
-    since: toMs(thread.latestRun?.completedAt),
-    title: m(msg("Done")),
-    agentMessage,
+    since: toMs(thread.latestRun?.completedAt ?? thread.updatedAt),
+    title: finishedTitle(resolveThreadListV2Status(thread)),
   };
 }
 
@@ -219,10 +231,10 @@ export function buildWatchSnapshot(
 ): WatchSnapshot {
   const waiting: WatchWaitingItem[] = [];
   const finished: WatchWaitingItem[] = [];
-  const running: WatchRunningThread[] = [];
   let doneToday = 0;
   const startOfDay = new Date(nowMs);
   startOfDay.setHours(0, 0, 0, 0);
+  const nowIso = new Date(nowMs).toISOString();
 
   for (const input of inputs) {
     const { thread } = input;
@@ -231,40 +243,22 @@ export function buildWatchSnapshot(
       waiting.push(...waitingItems(input));
       continue;
     }
-    // Subagent tasks only surface when they wait on the user.
-    if (thread.lineage.parentThreadId !== null) continue;
-    if (status === "working" || status === "waiting") {
-      running.push({
-        environmentId: thread.environmentId,
-        threadId: thread.id,
-        title: thread.title,
-        ...(input.projectTitle ? { project: input.projectTitle } : {}),
-        since: toMs(thread.runtime?.updatedAt ?? thread.updatedAt),
-        ...(input.chat?.userMessage ? { userMessage: input.chat.userMessage } : {}),
-        ...(input.chat?.agentMessage ? { agentMessage: input.chat.agentMessage } : {}),
-      });
-      continue;
-    }
-    const completedMs = toMs(thread.latestRun?.completedAt);
-    if (completedMs >= startOfDay.getTime()) doneToday += 1;
-    if (
-      status === "ready" &&
-      threadHasUnseenCompletion(thread) &&
-      nowMs - completedMs <= FINISHED_WINDOW_MS
+    if (isWatchFinished(thread, nowIso)) {
+      finished.push(finishedItem(input));
+    } else if (
+      thread.lineage.parentThreadId === null &&
+      toMs(thread.latestRun?.completedAt) >= startOfDay.getTime()
     ) {
-      const item = finishedItem(input);
-      if (item) finished.push(item);
+      doneToday += 1;
     }
   }
 
   waiting.sort((a, b) => a.since - b.since);
   finished.sort((a, b) => b.since - a.since);
-  running.sort((a, b) => b.since - a.since);
   return {
     v: 1,
     generatedAt: nowMs,
     waiting: [...waiting, ...finished.slice(0, MAX_FINISHED)],
-    running,
     doneToday,
   };
 }

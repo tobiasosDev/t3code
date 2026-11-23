@@ -14,19 +14,12 @@ struct InboxView: View {
             ForEach(store.waiting) { item in
               WaitingCard(item: item)
             }
-            // The crown's last page lists what runs, so running threads stay one turn away.
-            if !store.snapshot.running.isEmpty {
-              IdleView()
-            }
           }
           .tabViewStyle(.verticalPage)
         }
       }
       .navigationTitle(title)
       .containerBackground(Color.accentColor.gradient, for: .navigation)
-      .navigationDestination(for: RunningThread.self) { thread in
-        RunningThreadView(threadId: thread.id, fallback: thread)
-      }
     }
   }
 
@@ -78,7 +71,9 @@ struct WaitingCard: View {
               .background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
           }
         case .finished:
-          EmptyView()
+          Text(item.title)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
         case .question:
           ChatBubble(text: item.title, fromUser: false)
           if item.questionId == nil {
@@ -202,26 +197,11 @@ struct IdleView: View {
             .font(.title3)
             .foregroundStyle(Color.accentColor)
           VStack(alignment: .leading, spacing: 1) {
-            Text(store.waiting.isEmpty ? "Nichts wartet" : "Läuft gerade").font(.headline)
+            Text("Nichts wartet").font(.headline)
             Text(statusLine).font(.footnote).foregroundStyle(.secondary)
           }
         }
         .listRowBackground(Color.clear)
-      }
-
-      if !store.snapshot.running.isEmpty {
-        Section("Läuft · \(store.snapshot.running.count)") {
-          ForEach(store.snapshot.running) { thread in
-            NavigationLink(value: thread) {
-              VStack(alignment: .leading, spacing: 1) {
-                Text(thread.title).font(.body.weight(.semibold)).lineLimit(2)
-                Text([thread.project, RelativeTime.short(thread.since)].compactMap { $0 }.joined(separator: " · "))
-                  .font(.footnote)
-                  .foregroundStyle(.secondary)
-              }
-            }
-          }
-        }
       }
 
       if store.snapshot.doneToday > 0 {
@@ -233,59 +213,6 @@ struct IdleView: View {
   private var statusLine: String {
     guard store.hasSnapshot else { return "Öffne T3 Code auf dem iPhone" }
     return "Stand \(RelativeTime.short(store.snapshot.generatedAt))"
-  }
-}
-
-/// A running thread: its latest chat, live while the iPhone sends snapshots, and a spoken reply.
-struct RunningThreadView: View {
-  @EnvironmentObject private var store: WatchStore
-  let threadId: String
-  let fallback: RunningThread
-
-  private var thread: RunningThread {
-    store.snapshot.running.first { $0.id == threadId } ?? fallback
-  }
-
-  private var stillRunning: Bool {
-    store.snapshot.running.contains { $0.id == threadId }
-  }
-
-  var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 6) {
-        Text(thread.title)
-          .font(.headline)
-          .lineLimit(3)
-        if let user = thread.userMessage, !user.isEmpty {
-          ChatBubble(text: user, fromUser: true)
-        }
-        if let agent = thread.agentMessage, !agent.isEmpty {
-          ChatBubble(text: agent, fromUser: false)
-        }
-        HStack(spacing: 6) {
-          if stillRunning {
-            ProgressView().frame(width: 16, height: 16)
-            Text("Agent arbeitet · \(RelativeTime.short(thread.since))")
-          } else {
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor)
-            Text("Fertig")
-          }
-        }
-        .font(.footnote)
-        .foregroundStyle(.secondary)
-        .padding(.top, 2)
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
-    }
-    .navigationTitle(thread.project ?? "Thread")
-    .containerBackground(Color.accentColor.gradient, for: .navigation)
-    .toolbar {
-      ToolbarItemGroup(placement: .bottomBar) {
-        Spacer()
-        ReplyButton(item: thread.replyTarget)
-          .disabled(!store.canSend)
-      }
-    }
   }
 }
 

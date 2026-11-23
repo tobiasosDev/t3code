@@ -5,18 +5,16 @@ import WidgetKit
 struct WaitingEntry: TimelineEntry {
   let date: Date
   let waiting: Int
-  let running: Int
   let title: String?
   let thread: String?
 
-  static let placeholder = WaitingEntry(date: Date(), waiting: 2, running: 1, title: "Will Tests ausführen", thread: "Tune the handoff haptics")
+  static let placeholder = WaitingEntry(date: Date(), waiting: 2, title: "Will Tests ausführen", thread: "Tune the handoff haptics")
 
   static func load() -> WaitingEntry {
     let defaults = groupDefaults()
     return WaitingEntry(
       date: Date(),
       waiting: defaults?.integer(forKey: "t3.watch.summary.waitingCount") ?? 0,
-      running: defaults?.integer(forKey: "t3.watch.summary.runningCount") ?? 0,
       title: defaults?.string(forKey: "t3.watch.summary.firstTitle"),
       thread: defaults?.string(forKey: "t3.watch.summary.firstThread")
     )
@@ -83,7 +81,7 @@ struct WaitingWidgetView: View {
             Text(thread).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
           }
         } else {
-          Text(entry.running > 0 ? "\(entry.running) laufen" : "Nichts offen")
+          Text("Nichts offen")
             .font(.footnote)
             .foregroundStyle(.secondary)
         }
