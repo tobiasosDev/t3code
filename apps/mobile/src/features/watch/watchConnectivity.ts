@@ -6,6 +6,7 @@ import {
   RuntimeRequestId,
   ThreadId,
 } from "@t3tools/contracts";
+import { minuteTick } from "@t3tools/client-runtime/clock";
 import { type AtomCommand, runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import { requireOptionalNativeModule } from "expo";
 import { AppState, Platform } from "react-native";
@@ -221,7 +222,15 @@ export function installWatchConnectivity(): () => void {
       unsubscribeSnapshot = null;
       return;
     }
-    unsubscribeSnapshot ??= appAtomRegistry.subscribe(watchSnapshotInputsAtom, schedulePush);
+    if (unsubscribeSnapshot === null) {
+      const unsubscribeInputs = appAtomRegistry.subscribe(watchSnapshotInputsAtom, schedulePush);
+      // Snooze wake-ups change the list without any thread changing.
+      const unsubscribeMinute = minuteTick.subscribe(schedulePush);
+      unsubscribeSnapshot = () => {
+        unsubscribeInputs();
+        unsubscribeMinute();
+      };
+    }
     // A newly paired or reactivated watch has no snapshot yet.
     lastKey = null;
     schedulePush();

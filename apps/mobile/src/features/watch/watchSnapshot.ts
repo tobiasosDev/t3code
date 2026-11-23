@@ -55,7 +55,10 @@ export interface WatchThreadInput {
 }
 
 // Keeps the WatchConnectivity context well under its size limit.
-const MAX_FINISHED = 20;
+const MAX_FINISHED = 100;
+/** Only the newest finished threads open a detail stream for their chat. */
+export const MAX_FINISHED_WITH_CHAT = 20;
+const ACTIVE_RUNTIME_STATUSES = new Set(["preparing", "queued", "starting", "running", "waiting"]);
 const MAX_TEXT = 600;
 const FINISHED_STATUSES: ReadonlySet<ThreadListV2Status> = new Set([
   "ready",
@@ -72,7 +75,13 @@ export function isWatchFinished(thread: EnvironmentThreadShell, nowIso: string):
   if (thread.archivedAt !== null || !isListedThreadLineage(thread.lineage)) return false;
   if (thread.latestRun === null || thread.settledOverride === "settled") return false;
   if (effectiveSnoozed(thread, { now: nowIso })) return false;
+  // A guest message ranks "request" ahead of a running agent; that thread is still working.
+  if (thread.runtime !== null && ACTIVE_RUNTIME_STATUSES.has(thread.runtime.status)) return false;
   return FINISHED_STATUSES.has(resolveThreadListV2Status(thread));
+}
+
+export function watchFinishedSince(thread: EnvironmentThreadShell): number {
+  return toMs(thread.latestRun?.completedAt ?? thread.updatedAt);
 }
 
 function clip(text: string | undefined | null): string | undefined {
@@ -220,7 +229,7 @@ function finishedItem(input: WatchThreadInput): WatchWaitingItem {
     id: `${thread.environmentId}/${thread.id}/finished/${thread.latestRun?.completedAt ?? ""}`,
     kind: "finished",
     requestId: "",
-    since: toMs(thread.latestRun?.completedAt ?? thread.updatedAt),
+    since: watchFinishedSince(thread),
     title: finishedTitle(resolveThreadListV2Status(thread)),
   };
 }

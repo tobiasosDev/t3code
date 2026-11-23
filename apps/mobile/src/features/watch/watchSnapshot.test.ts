@@ -122,6 +122,13 @@ describe("buildWatchSnapshot", () => {
       latestRun: finishedRun,
       runtime: { status: "running", updatedAt: "2026-11-23T11:53:00.000Z" } as never,
     });
+    const guestWhileRunning = makeThreadShellFixture({
+      id: ThreadId.make("thread-guest-running"),
+      title: "Make boot logs oddly beautiful",
+      latestRun: finishedRun,
+      pendingGuestMessageCount: 1,
+      runtime: { status: "running", updatedAt: "2026-11-23T11:53:00.000Z" } as never,
+    });
     const chat = {
       userMessage: "Zeig die Shell sofort.",
       agentMessage: "Stream steht.",
@@ -129,7 +136,7 @@ describe("buildWatchSnapshot", () => {
     };
 
     const snapshot = buildWatchSnapshot(
-      [older, settled, working, newer].map((thread) => ({
+      [older, settled, working, guestWhileRunning, newer].map((thread) => ({
         thread,
         projectTitle: "moonbase",
         requests: null,

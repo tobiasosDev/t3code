@@ -5,38 +5,48 @@ import { environmentThreadDetails, environmentThreadShells } from "../../state/t
 import {
   buildWatchSnapshot,
   isWatchFinished,
+  MAX_FINISHED_WITH_CHAT,
   watchChatFromTimeline,
+  watchFinishedSince,
   type WatchThreadInput,
 } from "./watchSnapshot";
 
 /**
  * Everything the watch shows, subagent tasks included so their approvals reach the watch.
- * Only threads the watch lists (waiting or finished) open a detail stream for their chat.
+ * Waiting threads and the newest finished ones open a detail stream for their chat.
  */
-export const watchSnapshotInputsAtom = Atom.make((get): ReadonlyArray<WatchThreadInput> =>
-  get(environmentThreadShells.visibleThreadShellsAtom).flatMap((thread) => {
-    if (thread.archivedAt !== null) return [];
+export const watchSnapshotInputsAtom = Atom.make((get): ReadonlyArray<WatchThreadInput> => {
+  const nowIso = new Date().toISOString();
+  const threads = get(environmentThreadShells.visibleThreadShellsAtom).filter(
+    (thread) => thread.archivedAt === null,
+  );
+  const chatKeys = new Set(
+    threads
+      .filter((thread) => isWatchFinished(thread, nowIso))
+      .sort((a, b) => watchFinishedSince(b) - watchFinishedSince(a))
+      .slice(0, MAX_FINISHED_WITH_CHAT)
+      .map((thread) => `${thread.environmentId}/${thread.id}`),
+  );
+  return threads.map((thread) => {
     const ref = { environmentId: thread.environmentId, threadId: thread.id };
     const waiting = thread.hasPendingApprovals || thread.hasPendingUserInput;
-    const listed = waiting || isWatchFinished(thread, new Date().toISOString());
+    const withChat = waiting || chatKeys.has(`${thread.environmentId}/${thread.id}`);
     const project = get(
       environmentProjects.projectAtom({
         environmentId: thread.environmentId,
         projectId: thread.projectId,
       }),
     );
-    return [
-      {
-        thread,
-        projectTitle: project?.title ?? null,
-        requests: waiting ? get(environmentThreadDetails.pendingRequestsAtom(ref)) : null,
-        chat: listed
-          ? watchChatFromTimeline(get(environmentThreadDetails.visibleTurnItemsAtom(ref)))
-          : null,
-      },
-    ];
-  }),
-).pipe(Atom.withLabel("watch-snapshot-inputs"));
+    return {
+      thread,
+      projectTitle: project?.title ?? null,
+      requests: waiting ? get(environmentThreadDetails.pendingRequestsAtom(ref)) : null,
+      chat: withChat
+        ? watchChatFromTimeline(get(environmentThreadDetails.visibleTurnItemsAtom(ref)))
+        : null,
+    };
+  });
+}).pipe(Atom.withLabel("watch-snapshot-inputs"));
 
 export function readWatchSnapshot(inputs: ReadonlyArray<WatchThreadInput>) {
   return buildWatchSnapshot(inputs, Date.now());
