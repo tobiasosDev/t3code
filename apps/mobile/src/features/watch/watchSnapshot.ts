@@ -44,6 +44,8 @@ export interface WatchRunningThread {
   readonly title: string;
   readonly project?: string;
   readonly since: number;
+  readonly userMessage?: string;
+  readonly agentMessage?: string;
 }
 
 /** The parts of a thread's visible timeline the watch shows. */
@@ -238,6 +240,8 @@ export function buildWatchSnapshot(
         title: thread.title,
         ...(input.projectTitle ? { project: input.projectTitle } : {}),
         since: toMs(thread.runtime?.updatedAt ?? thread.updatedAt),
+        ...(input.chat?.userMessage ? { userMessage: input.chat.userMessage } : {}),
+        ...(input.chat?.agentMessage ? { agentMessage: input.chat.agentMessage } : {}),
       });
       continue;
     }

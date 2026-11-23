@@ -48,7 +48,8 @@ interface NativeWatchBridge {
   addListener(event: "action" | "state", listener: () => void): { remove(): void };
 }
 
-const PUSH_DELAY_MS = 750;
+// Streaming replies change the snapshot constantly; this caps WatchConnectivity traffic.
+const PUSH_DELAY_MS = 1_500;
 const RETRY_DELAY_MS = 5_000;
 // The session does not always report a newly installed watch app, so readiness is re-read.
 const READY_CHECK_MS = 15_000;

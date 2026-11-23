@@ -44,13 +44,23 @@ struct Graphic: Codable, Equatable, Identifiable {
   var title: String
 }
 
-struct RunningThread: Codable, Equatable, Identifiable {
+struct RunningThread: Codable, Hashable, Identifiable {
   var id: String { "\(environmentId)/\(threadId)" }
   var environmentId: String
   var threadId: String
   var title: String
   var project: String?
   var since: Double
+  var userMessage: String?
+  var agentMessage: String?
+
+  /// A reply to a running thread goes into the thread like a finished card's reply.
+  var replyTarget: WaitingItem {
+    WaitingItem(
+      id: "\(id)/running", kind: .finished, environmentId: environmentId, threadId: threadId,
+      requestId: "", threadTitle: title, project: project, since: since,
+      userMessage: userMessage, agentMessage: agentMessage, title: title)
+  }
 }
 
 /// What the watch asks the iPhone to do. Sent as a flat [String: Any] dictionary.

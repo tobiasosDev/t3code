@@ -98,6 +98,36 @@ describe("buildWatchSnapshot", () => {
     });
   });
 
+  it("sends running threads with their chat so the watch can open them", () => {
+    const thread = makeThreadShellFixture({
+      title: "Stream the shell before the data",
+      runtime: { status: "running", updatedAt: "2026-11-23T11:53:00.000Z" } as never,
+    });
+    const snapshot = buildWatchSnapshot(
+      [
+        {
+          thread,
+          projectTitle: "moonbase",
+          requests: null,
+          chat: {
+            userMessage: "Zeig die Shell sofort.",
+            agentMessage: "Baue den Stream um.",
+            graphics: [],
+          },
+        },
+      ],
+      NOW,
+    );
+    expect(snapshot.running).toEqual([
+      expect.objectContaining({
+        title: "Stream the shell before the data",
+        project: "moonbase",
+        userMessage: "Zeig die Shell sofort.",
+        agentMessage: "Baue den Stream um.",
+      }),
+    ]);
+  });
+
   it("skips threads whose requests have not loaded yet", () => {
     const thread = makeThreadShellFixture({ hasPendingApprovals: true });
     const snapshot = buildWatchSnapshot(
