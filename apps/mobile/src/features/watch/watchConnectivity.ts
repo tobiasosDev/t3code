@@ -21,6 +21,11 @@ import {
 } from "../../state/threads";
 import { decodeWatchOptionId, watchSnapshotKey } from "./watchSnapshot";
 import { readWatchSnapshot, watchSnapshotInputsAtom } from "./watchSnapshotAtom";
+import {
+  answerWatchThreadRequest,
+  type WatchThreadRequest,
+  type WatchThreadResponder,
+} from "./watchThreadRequest";
 
 interface WatchBridgeState {
   readonly supported: boolean;
@@ -41,12 +46,16 @@ export interface WatchAction {
   readonly optionId?: string;
 }
 
-interface NativeWatchBridge {
+interface NativeWatchBridge extends WatchThreadResponder {
   getState(): WatchBridgeState;
   updateSnapshot(json: string): void;
   pendingActions(): ReadonlyArray<WatchAction>;
   acknowledgeActions(ids: ReadonlyArray<string>): void;
   addListener(event: "action" | "state", listener: () => void): { remove(): void };
+  addListener(
+    event: "request",
+    listener: (request: WatchThreadRequest) => void,
+  ): { remove(): void };
 }
 
 // Streaming replies change the snapshot constantly; this caps WatchConnectivity traffic.
@@ -238,6 +247,11 @@ export function installWatchConnectivity(): () => void {
 
   const actionSubscription = native.addListener("action", drain);
   const stateSubscription = native.addListener("state", sync);
+  const requestSubscription = native.addListener("request", (request) => {
+    void answerWatchThreadRequest(native, request).catch((error: unknown) => {
+      console.warn("[watch] thread request failed", error);
+    });
+  });
   const appStateSubscription = AppState.addEventListener("change", (next) => {
     if (next !== "active") return;
     lastKey = null;
@@ -259,6 +273,7 @@ export function installWatchConnectivity(): () => void {
     unsubscribeSnapshot?.();
     actionSubscription.remove();
     stateSubscription.remove();
+    requestSubscription.remove();
     appStateSubscription.remove();
   };
 }
