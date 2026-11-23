@@ -37,7 +37,11 @@ export interface WatchWaitingItem {
   readonly allowsText?: boolean;
   readonly options?: ReadonlyArray<{ readonly id: string; readonly label: string }>;
   readonly graphics?: ReadonlyArray<{ readonly id: string; readonly title: string }>;
+  /** Finished threads only: how the run ended, for the watch's status icon. */
+  readonly status?: WatchFinishedStatus;
 }
+
+export type WatchFinishedStatus = "done" | "failed" | "limited" | "guest";
 
 /** The parts of a thread's visible timeline the watch shows. */
 export interface WatchThreadChat {
@@ -84,10 +88,22 @@ export function watchFinishedSince(thread: EnvironmentThreadShell): number {
   return toMs(thread.latestRun?.completedAt ?? thread.updatedAt);
 }
 
+/**
+ * Shortens text to `max` UTF-16 units with an ellipsis. A cut through an emoji would leave a
+ * lone surrogate, which Swift's JSONDecoder rejects along with the whole payload.
+ */
+export function clipWatchText(text: string, max: number): string {
+  if (text.length <= max) return text;
+  let end = max - 1;
+  const last = text.charCodeAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  return `${text.slice(0, end)}…`;
+}
+
 function clip(text: string | undefined | null): string | undefined {
   const trimmed = text?.trim();
   if (!trimmed) return undefined;
-  return trimmed.length > MAX_TEXT ? `${trimmed.slice(0, MAX_TEXT - 1)}…` : trimmed;
+  return clipWatchText(trimmed, MAX_TEXT);
 }
 
 function toMs(iso: string | null | undefined): number {
@@ -211,6 +227,13 @@ function waitingItems(input: WatchThreadInput): WatchWaitingItem[] {
   return items;
 }
 
+function finishedStatus(status: ThreadListV2Status): WatchFinishedStatus {
+  if (status === "failed") return "failed";
+  if (status === "limited") return "limited";
+  if (status === "request") return "guest";
+  return "done";
+}
+
 function finishedTitle(status: ThreadListV2Status): string {
   if (status === "failed") return m(msg("Failed"));
   if (status === "limited") return m(msg("Usage limit reached"));
@@ -220,6 +243,7 @@ function finishedTitle(status: ThreadListV2Status): string {
 
 function finishedItem(input: WatchThreadInput): WatchWaitingItem {
   const { thread } = input;
+  const status = resolveThreadListV2Status(thread);
   const latest = thread.source.latestVisibleMessage;
   const agentMessage =
     input.chat?.agentMessage ?? (latest?.role === "assistant" ? clip(latest.text) : undefined);
@@ -230,7 +254,8 @@ function finishedItem(input: WatchThreadInput): WatchWaitingItem {
     kind: "finished",
     requestId: "",
     since: watchFinishedSince(thread),
-    title: finishedTitle(resolveThreadListV2Status(thread)),
+    title: finishedTitle(status),
+    status: finishedStatus(status),
   };
 }
 

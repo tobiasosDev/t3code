@@ -11,7 +11,7 @@ struct WatchSnapshot: Codable, Equatable {
   static let empty = WatchSnapshot(v: 1, generatedAt: 0, waiting: [], doneToday: 0)
 }
 
-struct WaitingItem: Codable, Equatable, Identifiable {
+struct WaitingItem: Codable, Hashable, Identifiable {
   enum Kind: String, Codable { case approval, question, finished }
 
   var id: String
@@ -31,16 +31,69 @@ struct WaitingItem: Codable, Equatable, Identifiable {
   var allowsText: Bool?
   var options: [QuestionOption]?
   var graphics: [Graphic]?
+  /// Finished threads only: done, failed, limited or guest.
+  var status: String?
 }
 
-struct QuestionOption: Codable, Equatable, Identifiable {
+struct QuestionOption: Codable, Hashable, Identifiable {
   var id: String
   var label: String
 }
 
-struct Graphic: Codable, Equatable, Identifiable {
+struct Graphic: Codable, Hashable, Identifiable {
   var id: String
   var title: String
+}
+
+extension WaitingItem {
+  var threadKey: String { "\(environmentId)/\(threadId)" }
+  var needsAnswer: Bool { kind != .finished }
+}
+
+/// The iPhone's reply to a "thread" request: the newest chat lines, oldest first.
+/// Keep in sync with apps/mobile/src/features/watch/watchThread.ts.
+struct ThreadDetail: Codable, Equatable {
+  var entries: [ThreadEntry]
+  var truncated: Bool
+}
+
+struct ThreadEntry: Codable, Equatable, Identifiable {
+  enum Role: String, Codable { case user, agent, graphic }
+
+  var id: String
+  var role: Role
+  var text: String?
+  var attachmentId: String?
+  var title: String?
+}
+
+/// Rendered agent graphics the iPhone sends as JPEG files, cached by attachment id.
+enum WatchGraphics {
+  static var directory: URL {
+    let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+    let dir = base.appendingPathComponent("graphics", isDirectory: true)
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    return dir
+  }
+
+  static func url(for attachmentId: String) -> URL {
+    let name = attachmentId.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? attachmentId
+    return directory.appendingPathComponent(name + ".jpg")
+  }
+
+  static func cachedIds() -> [String] {
+    let files = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+    return files.compactMap { file in
+      guard file.hasSuffix(".jpg") else { return nil }
+      return String(file.dropLast(4)).removingPercentEncoding
+    }
+  }
+
+  static func store(_ file: URL, attachmentId: String) {
+    let target = url(for: attachmentId)
+    try? FileManager.default.removeItem(at: target)
+    try? FileManager.default.moveItem(at: file, to: target)
+  }
 }
 
 /// What the watch asks the iPhone to do. Sent as a flat [String: Any] dictionary.

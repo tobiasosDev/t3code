@@ -9,6 +9,6 @@ Pod::Spec.new do |s|
   s.source = { :path => '.' }
   s.static_framework = true
   s.dependency 'ExpoModulesCore'
-  s.frameworks = 'WatchConnectivity'
+  s.frameworks = 'WatchConnectivity', 'WebKit'
   s.source_files = '*.swift'
 end

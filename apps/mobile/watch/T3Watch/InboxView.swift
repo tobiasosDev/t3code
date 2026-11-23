@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Concept A2 "Nur was dich braucht": one page per approval or question, crown pages through them.
+/// Concept B1 "Liste nach Projekt": the app opens on every thread that waits for the user,
+/// grouped by project with the full title. A tap opens the thread's chat.
 struct InboxView: View {
   @EnvironmentObject private var store: WatchStore
 
@@ -10,179 +11,136 @@ struct InboxView: View {
         if store.waiting.isEmpty {
           IdleView()
         } else {
-          TabView {
-            ForEach(store.waiting) { item in
-              WaitingCard(item: item)
+          List {
+            ForEach(ProjectGroup.make(store.waiting)) { group in
+              Section {
+                ForEach(group.items) { item in
+                  NavigationLink(value: item) {
+                    ItemRow(item: item)
+                  }
+                }
+              } header: {
+                HStack {
+                  Text(group.name)
+                  Spacer()
+                  Text("\(group.items.count)")
+                }
+              }
             }
           }
-          .tabViewStyle(.verticalPage)
         }
       }
-      .navigationTitle(title)
+      .navigationTitle("T3 Code")
+      .navigationDestination(for: WaitingItem.self) { item in
+        ThreadView(item: item)
+      }
       .containerBackground(Color.accentColor.gradient, for: .navigation)
     }
   }
+}
 
-  private var title: String {
-    let count = store.waiting.count
-    switch count {
-    case 0: return "T3 Code"
-    case 1: return "1 wartet"
-    default: return "\(count) warten"
+/// Projects with something to answer come first; inside a project, answers before finished threads.
+struct ProjectGroup: Identifiable {
+  let name: String
+  var items: [WaitingItem]
+  var id: String { name }
+
+  static func make(_ items: [WaitingItem]) -> [ProjectGroup] {
+    let answers = items.filter(\.needsAnswer).sorted { $0.since < $1.since }
+    let finished = items.filter { !$0.needsAnswer }.sorted { $0.since > $1.since }
+    var groups: [ProjectGroup] = []
+    for item in answers + finished {
+      let name = item.project ?? "Ohne Projekt"
+      if let index = groups.firstIndex(where: { $0.name == name }) {
+        groups[index].items.append(item)
+      } else {
+        groups.append(ProjectGroup(name: name, items: [item]))
+      }
     }
+    return groups
   }
 }
 
-struct WaitingCard: View {
-  @EnvironmentObject private var store: WatchStore
+struct ItemRow: View {
   let item: WaitingItem
 
   var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 6) {
-        HStack {
-          Text(item.threadTitle).lineLimit(1)
-          Spacer(minLength: 4)
-          Text(RelativeTime.short(item.since))
-        }
-        .font(.footnote)
-        .foregroundStyle(.secondary)
-        // Keeps the age clear of the page indicator.
-        .padding(.trailing, 8)
-
-        if let user = item.userMessage, !user.isEmpty {
-          ChatBubble(text: user, fromUser: true)
-        }
-        if let agent = item.agentMessage, !agent.isEmpty, item.kind != .question || agent != item.title {
-          ChatBubble(text: agent, fromUser: false)
-        }
-
-        switch item.kind {
-        case .approval:
-          Text(item.title)
-            .font(.headline)
-            .padding(.top, 2)
-          if let detail = item.detail, !detail.isEmpty {
-            Text(detail)
-              .font(.system(.footnote, design: .monospaced))
-              .padding(.horizontal, 8)
-              .padding(.vertical, 6)
-              .frame(maxWidth: .infinity, alignment: .leading)
-              .background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-          }
-        case .finished:
-          Text(item.title)
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-        case .question:
-          ChatBubble(text: item.title, fromUser: false)
-          if item.questionId == nil {
-            Text("Beantworte das auf dem iPhone.")
-              .font(.footnote)
-              .foregroundStyle(.secondary)
-          }
-          ForEach(item.options ?? []) { option in
-            Button(option.label) {
-              store.send(WatchAction(kind: .answer, item: item, optionId: option.id))
-            }
-            .buttonStyle(.glass)
-            .disabled(!store.canSend)
-          }
-        }
-
-        ForEach(item.graphics ?? []) { graphic in
-          GraphicRow(graphic: graphic)
-        }
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
-    }
-    // Round icon buttons in the native bottom bar: nothing wraps on a 49 mm screen.
-    .toolbar {
-      ToolbarItemGroup(placement: .bottomBar) {
-        switch item.kind {
-        case .approval:
-          Button {
-            store.send(WatchAction(kind: .deny, item: item))
-          } label: {
-            Image(systemName: "xmark")
-          }
-          .tint(.red)
-          .accessibilityLabel("Ablehnen")
-          .disabled(!store.canSend)
-          Spacer()
-          Button {
-            store.send(WatchAction(kind: .approve, item: item))
-          } label: {
-            Image(systemName: "checkmark")
-          }
-          .buttonStyle(.glassProminent)
-          .accessibilityLabel("Freigeben")
-          .disabled(!store.canSend)
-        case .question where item.questionId != nil && item.allowsText == true, .finished:
-          Spacer()
-          ReplyButton(item: item)
-            .disabled(!store.canSend)
-        case .question:
-          EmptyView()
-        }
+    HStack(alignment: .top, spacing: 8) {
+      StatusIcon(item: item)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(item.threadTitle)
+          .font(.body.weight(.semibold))
+        Text(meta)
+          .font(.footnote)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
       }
     }
+    .padding(.vertical, 2)
+  }
+
+  private var meta: String {
+    let age = RelativeTime.short(item.since)
+    return age.isEmpty ? item.statusLabel : "\(item.statusLabel) · \(age)"
   }
 }
 
-/// Opens the system text input (dictation first on the watch) and sends the text into the thread.
-struct ReplyButton: View {
-  @EnvironmentObject private var store: WatchStore
+struct StatusIcon: View {
   let item: WaitingItem
 
   var body: some View {
-    TextFieldLink(prompt: Text("Antwort an den Agent")) {
-      Image(systemName: "mic.fill")
-        .accessibilityLabel("Sprechen")
-    } onSubmit: { text in
-      let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-      guard !trimmed.isEmpty else { return }
-      store.send(WatchAction(kind: .reply, item: item, text: trimmed))
-    }
-    .buttonStyle(.glassProminent)
+    Image(systemName: symbol)
+      .font(.system(size: 11, weight: .heavy))
+      .foregroundStyle(foreground)
+      .frame(width: 22, height: 22)
+      .background(background, in: Circle())
+      .padding(.top, 1)
   }
-}
 
-struct ChatBubble: View {
-  let text: String
-  let fromUser: Bool
-
-  var body: some View {
-    Text(text)
-      .font(fromUser ? .footnote : .body)
-      .lineLimit(fromUser ? 3 : 8)
-      .padding(.horizontal, 10)
-      .padding(.vertical, 7)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .background(
-        fromUser ? AnyShapeStyle(Color.accentColor.opacity(0.85)) : AnyShapeStyle(.white.opacity(0.11)),
-        in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-      )
-      .padding(.leading, fromUser ? 16 : 0)
-  }
-}
-
-/// watchOS has no web view, so a rendered HTML graphic shows as a card that points to the iPhone.
-struct GraphicRow: View {
-  let graphic: Graphic
-
-  var body: some View {
-    HStack(spacing: 8) {
-      Image(systemName: "chart.bar.xaxis")
-        .foregroundStyle(Color.accentColor)
-      VStack(alignment: .leading, spacing: 1) {
-        Text(graphic.title).font(.footnote).lineLimit(2)
-        Text("Grafik auf dem iPhone").font(.caption2).foregroundStyle(.secondary)
+  private var symbol: String {
+    switch item.kind {
+    case .approval: return "hand.raised.fill"
+    case .question: return "questionmark"
+    case .finished:
+      switch item.status {
+      case "failed": return "exclamationmark"
+      case "limited": return "hourglass"
+      case "guest": return "person.fill"
+      default: return "checkmark"
       }
     }
-    .padding(8)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .background(.white.opacity(0.11), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+  }
+
+  private var foreground: Color {
+    switch item.kind {
+    case .approval: return .black
+    case .question: return .white
+    case .finished: return item.status == "failed" ? .white : .green
+    }
+  }
+
+  private var background: Color {
+    switch item.kind {
+    case .approval: return .orange
+    case .question: return .accentColor
+    case .finished: return item.status == "failed" ? .red : .white.opacity(0.14)
+    }
+  }
+}
+
+extension WaitingItem {
+  var statusLabel: String {
+    switch kind {
+    case .approval: return "Freigabe"
+    case .question: return "Frage"
+    case .finished:
+      switch status {
+      case "failed": return "Fehlgeschlagen"
+      case "limited": return "Limit erreicht"
+      case "guest": return "Gast wartet"
+      default: return "Fertig"
+      }
+    }
   }
 }
 
